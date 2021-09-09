@@ -1,0 +1,71 @@
+
+class DecayLR(keras.callbacks.Callback):
+    def __init__(self, base_lr=0.01, decay_epoch=1):
+        super(DecayLR, self).__init__()
+        self.base_lr = base_lr
+        self.decay_epoch = decay_epoch 
+        self.lr_history = []
+        
+    def on_train_begin(self, logs={}):
+        K.set_value(self.model.optimizer.lr, self.base_lr)
+
+    def on_epoch_end(self, epoch, logs={}):
+        new_lr = self.base_lr * (0.5 ** (epoch // self.decay_epoch))
+        self.lr_history.append(K.get_value(self.model.optimizer.lr))
+        K.set_value(self.model.optimizer.lr, new_lr)
+model = resnet.ResnetBuilder.build_resnet_18((img_channels, img_rows, img_cols), nb_classes)
+sgd = optimizers.SGD(lr=0.005)
+
+bin_weights = np.ones((2,2))
+bin_weights[1, 1] = 10
+bin_weights[1, 0] = 10
+ncce = partial(w_categorical_crossentropy, weights=bin_weights)
+ncce.__name__ ='w_categorical_crossentropy'
+
+model.compile(loss=ncce,optimizer= sgd,
+              metrics=['accuracy'])
+training_generator = AugmentedDataGenerator('train', ablation=50)
+validation_generator = AugmentedDataGenerator('val', ablation=50)
+
+auc_logger = roc_callback()
+filepath = 'models/best_model.hdf5'
+checkpoint = ModelCheckpoint(filepath, monitor='val_auc', verbose=1, save_best_only=True, mode='max')
+
+decay = DecayLR()
+
+model.fit_generator(generator=training_generator,
+                    validation_data=validation_generator,
+                    epochs=10, callbacks=[auc_logger, decay, checkpoint])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#Use the ResnetBuilder function of resnet.py to create and then load weights into a validation model
+
+
+val_model = resnet.ResnetBuilder.build_resnet_18((img_channels, img_rows, img_cols), nb_classes)
+val_model.load_weights('models/best_model.hdf5')
+
+#As before, store the paths to the images into a variable  and use #io.imread to access them.
+
+effusion_path = os.path.join(DATASET_PATH, disease_cls[0], '*')
+effusion = glob.glob(effusion_path)
+effusion = io.imread(effusion[-8])
+plt.imshow(effusion,cmap='gray')
+img = preprocess_img(effusion[:, :, np.newaxis], 'validation')
+
+#Run predict with the validation model
+val_model.predict(img[np.newaxis,:])
+
